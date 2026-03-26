@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Power } from 'lucide-react';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down';
+import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up';
+import Power from 'lucide-react/dist/esm/icons/power';
 import { useStore } from '../store';
 
 const Panel = ({ title, isActive, onToggle, children }) => {
@@ -73,7 +75,7 @@ export const Modules = () => {
       >
         <Slider 
           label={isEn ? "Speed" : "السرعة"} 
-          value={state.speed} min={1} max={10} step={0.1} 
+          value={state.speed} min={0.25} max={10} step={0.05} 
           onChange={state.setSpeed} format={v => `${v}x`} 
         />
         <Slider 
@@ -107,6 +109,62 @@ export const Modules = () => {
         />
       </Panel>
 
+      {/* 3-Band EQ */}
+      <Panel
+        title={isEn ? "3-Band EQ" : "معادل 3 نطاقات"}
+        isActive={state.eq.enabled}
+        onToggle={() => state.setEq({ enabled: !state.eq.enabled })}
+      >
+        <div className={!state.eq.enabled ? 'opacity-50 pointer-events-none' : ''}>
+          <Slider
+            label={isEn ? "Low (200 Hz)" : "منخفض (200 Hz)"}
+            value={state.eq.low} min={-12} max={12} step={0.5}
+            onChange={(v) => state.setEq({ low: v })} format={v => `${v > 0 ? '+' : ''}${v} dB`}
+          />
+          <Slider
+            label={isEn ? "Mid (1 kHz)" : "متوسط (1 kHz)"}
+            value={state.eq.mid} min={-12} max={12} step={0.5}
+            onChange={(v) => state.setEq({ mid: v })} format={v => `${v > 0 ? '+' : ''}${v} dB`}
+          />
+          <Slider
+            label={isEn ? "High (8 kHz)" : "مرتفع (8 kHz)"}
+            value={state.eq.high} min={-12} max={12} step={0.5}
+            onChange={(v) => state.setEq({ high: v })} format={v => `${v > 0 ? '+' : ''}${v} dB`}
+          />
+        </div>
+      </Panel>
+
+      {/* Dynamics Compressor */}
+      <Panel
+        title={isEn ? "Compressor" : "ضاغط الصوت"}
+        isActive={state.compressor.enabled}
+        onToggle={() => state.setCompressor({ enabled: !state.compressor.enabled })}
+      >
+        <div className={!state.compressor.enabled ? 'opacity-50 pointer-events-none' : ''}>
+          <Slider
+            label={isEn ? "Threshold" : "العتبة"}
+            value={state.compressor.threshold} min={-60} max={0} step={1}
+            onChange={(v) => state.setCompressor({ threshold: v })} format={v => `${v} dB`}
+          />
+          <Slider
+            label={isEn ? "Ratio" : "النسبة"}
+            value={state.compressor.ratio} min={1} max={20} step={0.5}
+            onChange={(v) => state.setCompressor({ ratio: v })} format={v => `${v}:1`}
+          />
+          <Slider
+            label={isEn ? "Attack" : "الهجوم"}
+            value={state.compressor.attack} min={0} max={1} step={0.001}
+            onChange={(v) => state.setCompressor({ attack: v })} format={v => `${Math.round(v * 1000)} ms`}
+          />
+          <Slider
+            label={isEn ? "Release" : "الإفلات"}
+            value={state.compressor.release} min={0.01} max={1} step={0.01}
+            onChange={(v) => state.setCompressor({ release: v })} format={v => `${Math.round(v * 1000)} ms`}
+          />
+        </div>
+      </Panel>
+
+      {/* Reverb */}
       <Panel 
         title={isEn ? "Reverb" : "الصدى"} 
         isActive={state.reverb.enabled}
