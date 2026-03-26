@@ -3,6 +3,7 @@ import Play from 'lucide-react/dist/esm/icons/play';
 import Pause from 'lucide-react/dist/esm/icons/pause';
 import Download from 'lucide-react/dist/esm/icons/download';
 import SkipBack from 'lucide-react/dist/esm/icons/skip-back';
+import X from 'lucide-react/dist/esm/icons/x';
 import { useStore } from '../store';
 import { engine } from '../audio/engine';
 import { exportAudio } from '../audio/export';
@@ -14,6 +15,8 @@ export const PlaybackControls = () => {
   const currentTime = useStore(s => s.currentTime);
   const duration = useStore(s => s.duration);
   const file = useStore(s => s.file);
+  const fileName = useStore(s => s.fileName);
+  const resetAudio = useStore(s => s.resetAudio);
   const [exportModal, setExportModal] = useState(false);
   const [exportProgress, setExportProgress] = useState(null);
 
@@ -35,6 +38,11 @@ export const PlaybackControls = () => {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
+  const handleRemoveAudio = () => {
+    engine.unload();
+    resetAudio();
+  };
+
   const startExport = async (format) => {
     setIsPlaying(false);
     try {
@@ -53,9 +61,13 @@ export const PlaybackControls = () => {
     <>
       <div className="fixed bottom-0 left-0 right-0 p-4 pb-safe bg-zinc-900/90 backdrop-blur-xl border-t border-emerald-500/20 z-50">
         <div className="max-w-md mx-auto">
-          <div className="flex items-center justify-between text-xs text-emerald-400 font-medium mb-2 px-1">
-            <span>{formatTime(currentTime)}</span>
-            <span>{formatTime(duration)}</span>
+          {/* File name + time row */}
+          <div className="flex items-center justify-between text-xs font-medium mb-2 px-1">
+            <span className="text-emerald-400">{formatTime(currentTime)}</span>
+            {file && (
+              <span className="text-zinc-500 truncate max-w-[160px] mx-2">{fileName}</span>
+            )}
+            <span className="text-emerald-400">{formatTime(duration)}</span>
           </div>
           
           <input 
@@ -77,6 +89,16 @@ export const PlaybackControls = () => {
             >
               <SkipBack size={24} />
             </button>
+
+            {/* Remove Audio */}
+            <button
+              onClick={handleRemoveAudio}
+              disabled={!file}
+              title={isEn ? 'Remove Audio' : 'إزالة الصوت'}
+              className="p-3 text-zinc-400 hover:text-red-400 disabled:opacity-50 transition-colors"
+            >
+              <X size={22} />
+            </button>
             
             <button 
               onClick={togglePlay}
@@ -93,6 +115,9 @@ export const PlaybackControls = () => {
             >
               <Download size={24} />
             </button>
+
+            {/* Spacer to balance the layout */}
+            <div className="w-[48px]" />
           </div>
         </div>
       </div>

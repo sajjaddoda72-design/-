@@ -44,4 +44,5 @@ export const useStore = create((set) => ({
   setCompressor: (compUpdate) => set((state) => ({ compressor: { ...state.compressor, ...compUpdate } })),
   setReverb: (reverbUpdate) => set((state) => ({ reverb: { ...state.reverb, ...reverbUpdate } })),
   toggleLang: () => set((state) => ({ lang: state.lang === 'en' ? 'ar' : 'en' })),
+  resetAudio: () => set({ file: null, fileName: '', audioBuffer: null, isPlaying: false, currentTime: 0, duration: 0 }),
 }));

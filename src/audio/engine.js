@@ -153,6 +153,14 @@ class AudioEngine {
     cancelAnimationFrame(this.rafId);
   }
 
+  unload() {
+    this.pause();
+    if (this.shifter) {
+      this.shifter.off('play', this.handlePlayEvent);
+      this.shifter = null;
+    }
+  }
+
   seek(perc) {
     if (this.shifter) {
       this.shifter.percentagePlayed = perc;
