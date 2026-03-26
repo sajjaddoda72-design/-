@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { Play, Pause, Download, SkipBack } from 'lucide-react';
+import Play from 'lucide-react/dist/esm/icons/play';
+import Pause from 'lucide-react/dist/esm/icons/pause';
+import Download from 'lucide-react/dist/esm/icons/download';
+import SkipBack from 'lucide-react/dist/esm/icons/skip-back';
 import { useStore } from '../store';
 import { engine } from '../audio/engine';
 import { exportAudio } from '../audio/export';

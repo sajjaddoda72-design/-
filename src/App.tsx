@@ -1,10 +1,9 @@
-import React from 'react';
 import { UploadGate } from './components/UploadGate';
 import { Modules } from './components/Modules';
 import { PlaybackControls } from './components/PlaybackControls';
 import { Visualizer } from './components/Visualizer';
 import { useStore } from './store';
-import { Languages } from 'lucide-react';
+import Languages from 'lucide-react/dist/esm/icons/languages';
 
 function App() {
   const file = useStore(s => s.file);
