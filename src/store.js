@@ -1,5 +1,18 @@
 import { create } from 'zustand';
 
+/** 18-band EQ frequency centers (Hz) */
+export const EQ_BANDS = [
+  65, 92, 131, 185, 262, 370, 523, 740, 1046,
+  1479, 2093, 2960, 4186, 5900, 8356, 11800, 16670, 20000,
+];
+
+/** Create default gains object: { 65: 0, 92: 0, ... } */
+const defaultEqGains = () => {
+  const g = {};
+  EQ_BANDS.forEach((f) => { g[f] = 0; });
+  return g;
+};
+
 export const useStore = create((set) => ({
   file: null,
   fileName: '',
@@ -11,12 +24,14 @@ export const useStore = create((set) => ({
   pitch: 0,
   volume: 0, // dB
   pan: 0,
+  reversed: false,
+
+  // 18-band EQ
   eq: {
     enabled: false,
-    low: 0,  // 200 Hz lowshelf gain dB
-    mid: 0,  // 1 kHz peaking gain dB
-    high: 0, // 8 kHz highshelf gain dB
+    gains: defaultEqGains(), // { [freq]: dB }
   },
+
   compressor: {
     enabled: false,
     threshold: -24,
@@ -31,6 +46,10 @@ export const useStore = create((set) => ({
     decay: 2,
     preDelay: 0.05,
   },
+
+  // FX Preset: null or preset id string
+  activePreset: null,
+
   lang: 'en',
 
   setFile: (file, name, buffer) => set({ file, fileName: name, audioBuffer: buffer, duration: buffer ? buffer.duration : 0, currentTime: 0 }),
@@ -40,9 +59,15 @@ export const useStore = create((set) => ({
   setPitch: (pitch) => set({ pitch }),
   setVolume: (volume) => set({ volume }),
   setPan: (pan) => set({ pan }),
+  setReversed: (reversed) => set({ reversed }),
   setEq: (eqUpdate) => set((state) => ({ eq: { ...state.eq, ...eqUpdate } })),
+  setEqBand: (freq, dB) => set((state) => ({
+    eq: { ...state.eq, gains: { ...state.eq.gains, [freq]: dB } },
+  })),
+  resetEq: () => set((state) => ({ eq: { ...state.eq, gains: defaultEqGains() } })),
   setCompressor: (compUpdate) => set((state) => ({ compressor: { ...state.compressor, ...compUpdate } })),
   setReverb: (reverbUpdate) => set((state) => ({ reverb: { ...state.reverb, ...reverbUpdate } })),
+  setActivePreset: (presetId) => set({ activePreset: presetId }),
   toggleLang: () => set((state) => ({ lang: state.lang === 'en' ? 'ar' : 'en' })),
-  resetAudio: () => set({ file: null, fileName: '', audioBuffer: null, isPlaying: false, currentTime: 0, duration: 0 }),
+  resetAudio: () => set({ file: null, fileName: '', audioBuffer: null, isPlaying: false, currentTime: 0, duration: 0, reversed: false }),
 }));
