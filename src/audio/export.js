@@ -4,6 +4,9 @@ import { generateImpulseResponse } from './reverb';
 import { useStore, EQ_BANDS } from '../store';
 import { FX_PRESETS } from './fxPresets';
 
+// Resolve Mp3Encoder from lamejs (handles CJS interop quirks)
+const Mp3Encoder = lamejs?.Mp3Encoder ?? lamejs?.default?.Mp3Encoder;
+
 /**
  * Reverse an AudioBuffer (pure copy, no mutation).
  */
@@ -18,6 +21,25 @@ function reverseBuffer(ctx, buffer) {
     }
   }
   return rev;
+}
+
+/**
+ * Resample an AudioBuffer to a target sample rate using OfflineAudioContext.
+ * Required because lamejs only supports specific rates (32000, 44100, 48000).
+ */
+async function resampleBuffer(buffer, targetRate) {
+  if (buffer.sampleRate === targetRate) return buffer;
+  const duration = buffer.length / buffer.sampleRate;
+  const offlineCtx = new OfflineAudioContext(
+    buffer.numberOfChannels,
+    Math.ceil(duration * targetRate),
+    targetRate,
+  );
+  const source = offlineCtx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(offlineCtx.destination);
+  source.start(0);
+  return offlineCtx.startRendering();
 }
 
 const applyEffectsOffline = async (outBuffer, state, onProgress) => {
@@ -86,9 +108,7 @@ const applyEffectsOffline = async (outBuffer, state, onProgress) => {
   const preDelay = offlineCtx.createDelay(1);
   const convolver = offlineCtx.createConvolver();
 
-  // Wire: source -> gain -> pan -> eq[0..17] -> comp -> fxDry -> reverbDry -> dest
-  //                                                  -> fxWet -> reverbDry
-  //                                           comp -> preDelay -> convolver -> reverbWet -> dest
+  // Wire the graph
   source.connect(gainNode);
   gainNode.connect(panNode);
   panNode.connect(eqFilters[0]);
@@ -123,7 +143,6 @@ const applyEffectsOffline = async (outBuffer, state, onProgress) => {
   } else {
     reverbDry.gain.value = 1;
     reverbWet.gain.value = 0;
-    // Need a valid buffer even when disabled
     convolver.buffer = generateImpulseResponse(offlineCtx, 0.01, 0.01, false);
   }
 
@@ -180,62 +199,74 @@ const encodeWav = (audioBuffer) => {
 };
 
 const encodeMp3 = (audioBuffer, onProgress) => {
-  return new Promise((resolve) => {
-    const channels = audioBuffer.numberOfChannels;
-    const sampleRate = audioBuffer.sampleRate;
-    const kbps = 128;
-    const mp3encoder = new lamejs.Mp3Encoder(channels, sampleRate, kbps);
+  if (!Mp3Encoder) {
+    throw new Error('MP3 encoder not available — lamejs failed to load');
+  }
 
-    const left = audioBuffer.getChannelData(0);
-    const right = channels > 1 ? audioBuffer.getChannelData(1) : left;
+  return new Promise((resolve, reject) => {
+    try {
+      const channels = audioBuffer.numberOfChannels;
+      const sampleRate = audioBuffer.sampleRate;
+      const kbps = 192;
+      const mp3encoder = new Mp3Encoder(channels, sampleRate, kbps);
 
-    const sampleBlockSize = 1152;
-    const mp3Data = [];
-    let offset = 0;
+      const left = audioBuffer.getChannelData(0);
+      const right = channels > 1 ? audioBuffer.getChannelData(1) : left;
 
-    const encodeChunk = () => {
-      let startTime = performance.now();
+      const sampleBlockSize = 1152;
+      const mp3Data = [];
+      let offset = 0;
 
-      while (offset < left.length && performance.now() - startTime < 16) {
-        let length = Math.min(sampleBlockSize, left.length - offset);
+      const encodeChunk = () => {
+        try {
+          const startTime = performance.now();
 
-        const leftChunk = new Int16Array(length);
-        const rightChunk = new Int16Array(length);
+          while (offset < left.length && performance.now() - startTime < 16) {
+            const length = Math.min(sampleBlockSize, left.length - offset);
 
-        for (let i = 0; i < length; i++) {
-          let l = left[offset + i];
-          let r = right[offset + i];
-          l = Math.max(-1, Math.min(1, l));
-          r = Math.max(-1, Math.min(1, r));
-          leftChunk[i] = l < 0 ? l * 0x8000 : l * 0x7FFF;
-          rightChunk[i] = r < 0 ? r * 0x8000 : r * 0x7FFF;
+            const leftChunk = new Int16Array(length);
+            const rightChunk = new Int16Array(length);
+
+            for (let i = 0; i < length; i++) {
+              let l = left[offset + i];
+              let r = right[offset + i];
+              l = Math.max(-1, Math.min(1, l));
+              r = Math.max(-1, Math.min(1, r));
+              leftChunk[i] = l < 0 ? l * 0x8000 : l * 0x7FFF;
+              rightChunk[i] = r < 0 ? r * 0x8000 : r * 0x7FFF;
+            }
+
+            const mp3buf = channels === 2
+              ? mp3encoder.encodeBuffer(leftChunk, rightChunk)
+              : mp3encoder.encodeBuffer(leftChunk);
+
+            if (mp3buf.length > 0) {
+              mp3Data.push(new Uint8Array(mp3buf));
+            }
+
+            offset += sampleBlockSize;
+          }
+
+          if (onProgress) onProgress(Math.min(100, (offset / left.length) * 100));
+
+          if (offset >= left.length) {
+            const mp3buf = mp3encoder.flush();
+            if (mp3buf.length > 0) {
+              mp3Data.push(new Uint8Array(mp3buf));
+            }
+            resolve(new Blob(mp3Data, { type: 'audio/mpeg' }));
+          } else {
+            setTimeout(encodeChunk, 0);
+          }
+        } catch (err) {
+          reject(err);
         }
+      };
 
-        let mp3buf = channels === 2
-          ? mp3encoder.encodeBuffer(leftChunk, rightChunk)
-          : mp3encoder.encodeBuffer(leftChunk);
-
-        if (mp3buf.length > 0) {
-          mp3Data.push(mp3buf);
-        }
-
-        offset += sampleBlockSize;
-      }
-
-      if (onProgress) onProgress(Math.min(100, (offset / left.length) * 100));
-
-      if (offset >= left.length) {
-        const mp3buf = mp3encoder.flush();
-        if (mp3buf.length > 0) {
-          mp3Data.push(mp3buf);
-        }
-        resolve(new Blob(mp3Data, { type: 'audio/mp3' }));
-      } else {
-        setTimeout(encodeChunk, 0);
-      }
-    };
-
-    encodeChunk();
+      encodeChunk();
+    } catch (err) {
+      reject(err);
+    }
   });
 };
 
@@ -256,16 +287,18 @@ export const exportAudio = async (format, onProgress) => {
   const stretchedBuffer = await stretchOffline(ctx, sourceBuffer, state.speed, state.pitch, (p) => onProgress('Stretching...', p));
 
   onProgress('Applying Effects...', 0);
-  const finalBuffer = await applyEffectsOffline(stretchedBuffer, state, (p) => onProgress('Applying Effects...', p));
+  const effectsBuffer = await applyEffectsOffline(stretchedBuffer, state, (p) => onProgress('Applying Effects...', p));
 
   onProgress(`Encoding ${format.toUpperCase()}...`, 0);
 
   let blob;
   if (format === 'wav') {
-    blob = encodeWav(finalBuffer);
+    blob = encodeWav(effectsBuffer);
     onProgress('Done', 100);
   } else if (format === 'mp3') {
-    blob = await encodeMp3(finalBuffer, (p) => onProgress('Encoding MP3...', p));
+    // Resample to 44100 Hz for lamejs compatibility
+    const mp3Buffer = await resampleBuffer(effectsBuffer, 44100);
+    blob = await encodeMp3(mp3Buffer, (p) => onProgress('Encoding MP3...', p));
   }
 
   const url = URL.createObjectURL(blob);
