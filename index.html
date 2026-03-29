@@ -11,11 +11,68 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- Update banner (hidden by default) -->
+    <div id="sw-update-banner" style="
+      display:none; position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+      z-index:9999; background:rgba(16,185,129,0.95); color:#fff; padding:12px 20px;
+      border-radius:16px; font-family:system-ui,sans-serif; font-size:14px;
+      box-shadow:0 4px 24px rgba(0,0,0,0.4); backdrop-filter:blur(8px);
+      display:none; align-items:center; gap:12px;
+    ">
+      <span id="sw-update-text">New update available</span>
+      <button id="sw-update-btn" style="
+        background:#fff; color:#059669; border:none; padding:6px 16px;
+        border-radius:10px; font-weight:600; cursor:pointer; font-size:13px;
+      ">Update Now</button>
+    </div>
+
     <script type="module" src="/src/main.tsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/service-worker.js');
+          navigator.serviceWorker.register('/service-worker.js').then((reg) => {
+            console.log('[App] SW registered');
+
+            // Check for updates periodically
+            setInterval(() => reg.update(), 60 * 1000);
+
+            // Detect waiting service worker (new version ready)
+            const showUpdateBanner = (worker) => {
+              const banner = document.getElementById('sw-update-banner');
+              const btn = document.getElementById('sw-update-btn');
+              if (!banner || !btn) return;
+              banner.style.display = 'flex';
+              btn.onclick = () => {
+                worker.postMessage({ type: 'SKIP_WAITING' });
+                banner.style.display = 'none';
+              };
+            };
+
+            if (reg.waiting) {
+              showUpdateBanner(reg.waiting);
+            }
+
+            reg.addEventListener('updatefound', () => {
+              const newWorker = reg.installing;
+              if (!newWorker) return;
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  // New SW installed but waiting — show banner
+                  showUpdateBanner(newWorker);
+                }
+              });
+            });
+
+            // When the new SW takes over, reload the page
+            let refreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+              if (!refreshing) {
+                refreshing = true;
+                window.location.reload();
+              }
+            });
+          });
         });
       }
     </script>
