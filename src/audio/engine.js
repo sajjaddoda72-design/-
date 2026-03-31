@@ -89,6 +89,14 @@ class AudioEngine {
     // Dynamics Compressor
     this.compressor = this.ctx.createDynamicsCompressor();
 
+    // Limiter (DynamicsCompressor with hard-knee, high ratio)
+    this.limiter = this.ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -3;
+    this.limiter.knee.value = 0;
+    this.limiter.ratio.value = 20;
+    this.limiter.attack.value = 0.003;
+    this.limiter.release.value = 0.1;
+
     // FX preset dry/wet
     this.fxDryGain = this.ctx.createGain();
     this.fxWetGain = this.ctx.createGain();
@@ -106,9 +114,9 @@ class AudioEngine {
     this.analyser.fftSize = 2048;
 
     // Signal chain:
-    // gainNode -> panNode -> eqFilters[0..17] -> compressor -> fxDryGain -> reverbDry -> analyser -> dest
-    //                                                       -> fxWetGain -> reverbDry
-    //                                         compressor -> reverbWet path (preDelay -> convolver -> reverbWet -> analyser)
+    // gainNode -> panNode -> eqFilters[0..17] -> compressor -> limiter -> fxDryGain -> reverbDry -> analyser -> dest
+    //                                                                  -> fxWetGain -> reverbDry
+    //                                                       limiter -> reverbWet path (preDelay -> convolver -> reverbWet -> analyser)
     this._connectChain();
 
     // Subscribe to Zustand store for play/pause and param changes
@@ -147,16 +155,19 @@ class AudioEngine {
     const lastEq = this.eqFilters[this.eqFilters.length - 1];
     lastEq.connect(this.compressor);
 
-    // Compressor -> FX dry path
-    this.compressor.connect(this.fxDryGain);
+    // Compressor -> Limiter (final stage)
+    this.compressor.connect(this.limiter);
+
+    // Limiter -> FX dry path
+    this.limiter.connect(this.fxDryGain);
     this.fxDryGain.connect(this.reverbDry);
 
-    // FX wet path (initially disconnected — connected when a preset is applied)
+    // FX wet path
     this.fxWetGain.connect(this.reverbDry);
 
-    // Reverb send from compressor
+    // Reverb send from limiter
     const preDelayGain = this.ctx.createGain();
-    this.compressor.connect(preDelayGain);
+    this.limiter.connect(preDelayGain);
     preDelayGain.connect(this.preDelay);
     this.preDelay.connect(this.convolver);
     this.convolver.connect(this.reverbWet);
@@ -256,9 +267,9 @@ class AudioEngine {
     const nodes = buildFn(this.ctx);
     this.fxNodes = nodes;
 
-    // Wire: compressor -> nodes[0] -> ... -> nodes[n] -> fxWetGain
+    // Wire: limiter -> nodes[0] -> ... -> nodes[n] -> fxWetGain
     if (nodes.length > 0) {
-      this.compressor.connect(nodes[0]);
+      this.limiter.connect(nodes[0]);
       for (let i = 1; i < nodes.length; i++) {
         nodes[i - 1].connect(nodes[i]);
       }
@@ -309,6 +320,15 @@ class AudioEngine {
       this.compressor.ratio.setTargetAtTime(state.compressor.ratio, this.ctx.currentTime, 0.05);
       this.compressor.attack.setTargetAtTime(state.compressor.attack, this.ctx.currentTime, 0.05);
       this.compressor.release.setTargetAtTime(state.compressor.release, this.ctx.currentTime, 0.05);
+    }
+
+    // Limiter
+    if (state.limiter) {
+      const lThresh = state.limiter.enabled ? state.limiter.threshold : 0;
+      const lRatio = state.limiter.enabled ? 20 : 1;
+      this.limiter.threshold.setTargetAtTime(lThresh, this.ctx.currentTime, 0.05);
+      this.limiter.ratio.setTargetAtTime(lRatio, this.ctx.currentTime, 0.05);
+      this.limiter.release.setTargetAtTime(state.limiter.release, this.ctx.currentTime, 0.05);
     }
 
     // Reverb

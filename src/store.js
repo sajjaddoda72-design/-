@@ -39,6 +39,15 @@ export const useStore = create((set) => ({
     attack: 0.003,
     release: 0.25,
   },
+  normalize: {
+    enabled: false,
+    targetDb: -1, // target peak level in dB
+  },
+  limiter: {
+    enabled: false,
+    threshold: -3,
+    release: 0.1,
+  },
   reverb: {
     enabled: false,
     wet: 0.5,
@@ -66,6 +75,8 @@ export const useStore = create((set) => ({
   })),
   resetEq: () => set((state) => ({ eq: { ...state.eq, gains: defaultEqGains() } })),
   setCompressor: (compUpdate) => set((state) => ({ compressor: { ...state.compressor, ...compUpdate } })),
+  setNormalize: (normUpdate) => set((state) => ({ normalize: { ...state.normalize, ...normUpdate } })),
+  setLimiter: (limUpdate) => set((state) => ({ limiter: { ...state.limiter, ...limUpdate } })),
   setReverb: (reverbUpdate) => set((state) => ({ reverb: { ...state.reverb, ...reverbUpdate } })),
   setActivePreset: (presetId) => set({ activePreset: presetId }),
   toggleLang: () => set((state) => ({ lang: state.lang === 'en' ? 'ar' : 'en' })),
