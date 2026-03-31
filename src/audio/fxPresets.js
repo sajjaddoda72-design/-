@@ -239,4 +239,105 @@ export const FX_PRESETS = [
       return [conv, delay, lpf];
     },
   },
+
+  // ---- 11. Internal Voice ----
+  // Muffled, intimate, close sound: lowpass + gentle reverb + reduced stereo
+  {
+    id: 'internal-voice',
+    name: { en: 'Internal Voice', ar: 'صوت داخلي' },
+    icon: '🧠',
+    wet: 0.7,
+    build(ctx) {
+      const lpf = ctx.createBiquadFilter();
+      lpf.type = 'lowpass';
+      lpf.frequency.value = 1200;
+      lpf.Q.value = 0.7;
+      const conv = ctx.createConvolver();
+      conv.buffer = generateImpulseResponse(ctx, 1.5, 3, false);
+      const gain = ctx.createGain();
+      gain.gain.value = 1.1;
+      lpf.connect(conv);
+      conv.connect(gain);
+      return [lpf, conv, gain];
+    },
+  },
+
+  // ---- 12. Anti-Voice Mirror ----
+  // Simultaneous normal + phase-inverted delayed copy for eerie mirror effect
+  {
+    id: 'anti-voice',
+    name: { en: 'Anti-Voice Mirror', ar: 'صوت معكوس' },
+    icon: '🪞',
+    wet: 0.65,
+    build(ctx) {
+      const delay = ctx.createDelay(1);
+      delay.delayTime.value = 0.03;
+      const invert = ctx.createGain();
+      invert.gain.value = -0.8;
+      const lpf = ctx.createBiquadFilter();
+      lpf.type = 'lowpass';
+      lpf.frequency.value = 3000;
+      const conv = ctx.createConvolver();
+      conv.buffer = generateImpulseResponse(ctx, 2, 4, true);
+      delay.connect(invert);
+      invert.connect(lpf);
+      lpf.connect(conv);
+      return [delay, invert, lpf, conv];
+    },
+  },
+
+  // ---- 13. Womb / Inside ----
+  // Warm muffled low-frequency emphasis, soft lowpass, subtle resonant reverb
+  {
+    id: 'womb',
+    name: { en: 'Womb / Inside', ar: 'رحم / داخلي' },
+    icon: '🫧',
+    wet: 0.75,
+    build(ctx) {
+      const lpf = ctx.createBiquadFilter();
+      lpf.type = 'lowpass';
+      lpf.frequency.value = 400;
+      lpf.Q.value = 3;
+      const bass = ctx.createBiquadFilter();
+      bass.type = 'lowshelf';
+      bass.frequency.value = 150;
+      bass.gain.value = 8;
+      const conv = ctx.createConvolver();
+      conv.buffer = generateImpulseResponse(ctx, 2, 5, false);
+      const gain = ctx.createGain();
+      gain.gain.value = 1.3;
+      lpf.connect(bass);
+      bass.connect(conv);
+      conv.connect(gain);
+      return [lpf, bass, conv, gain];
+    },
+  },
+
+  // ---- 14. Breath Boost ----
+  // Air-band enhancement: upper frequency EQ boost + gentle compression
+  {
+    id: 'breath-boost',
+    name: { en: 'Breath Boost', ar: 'تعزيز النفس' },
+    icon: '💨',
+    wet: 0.6,
+    build(ctx) {
+      const air = ctx.createBiquadFilter();
+      air.type = 'highshelf';
+      air.frequency.value = 8000;
+      air.gain.value = 10;
+      const presence = ctx.createBiquadFilter();
+      presence.type = 'peaking';
+      presence.frequency.value = 5000;
+      presence.gain.value = 6;
+      presence.Q.value = 1;
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -25;
+      comp.ratio.value = 3;
+      comp.attack.value = 0.01;
+      comp.release.value = 0.15;
+      air.connect(presence);
+      presence.connect(comp);
+      return [air, presence, comp];
+    },
+  },
 ];
