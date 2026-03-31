@@ -53,6 +53,19 @@ const applyEffectsOffline = async (outBuffer, state, onProgress) => {
     comp.release.value = state.compressor.release;
   }
 
+  // Limiter (hard-knee compressor as final stage)
+  const limiter = offlineCtx.createDynamicsCompressor();
+  if (state.limiter && state.limiter.enabled) {
+    limiter.threshold.value = state.limiter.threshold;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.003;
+    limiter.release.value = state.limiter.release;
+  } else {
+    limiter.threshold.value = 0;
+    limiter.ratio.value = 1;
+  }
+
   const fxDryGain = offlineCtx.createGain();
   const fxWetGain = offlineCtx.createGain();
   fxDryGain.gain.value = 1;
@@ -63,7 +76,7 @@ const applyEffectsOffline = async (outBuffer, state, onProgress) => {
     if (preset) {
       const nodes = preset.build(offlineCtx);
       if (nodes.length > 0) {
-        comp.connect(nodes[0]);
+        limiter.connect(nodes[0]);
         for (let i = 1; i < nodes.length; i++) {
           nodes[i - 1].connect(nodes[i]);
         }
@@ -84,12 +97,15 @@ const applyEffectsOffline = async (outBuffer, state, onProgress) => {
   panNode.connect(eqFilters[0]);
   eqFilters[eqFilters.length - 1].connect(comp);
 
-  comp.connect(fxDryGain);
+  // Compressor -> Limiter
+  comp.connect(limiter);
+
+  limiter.connect(fxDryGain);
   fxDryGain.connect(reverbDry);
   fxWetGain.connect(reverbDry);
 
   const preDelayGain = offlineCtx.createGain();
-  comp.connect(preDelayGain);
+  limiter.connect(preDelayGain);
   preDelayGain.connect(preDelay);
   preDelay.connect(convolver);
   convolver.connect(reverbWet);
@@ -198,8 +214,32 @@ export const exportAudio = async (onProgress) => {
   onProgress('Applying Effects...', 0);
   const effectsBuffer = await applyEffectsOffline(stretchedBuffer, state, (p) => onProgress('Applying Effects...', p));
 
+  // Normalize: scan peaks and scale to target level
+  let finalBuffer = effectsBuffer;
+  if (state.normalize && state.normalize.enabled) {
+    onProgress('Normalizing...', 85);
+    const targetLinear = Math.pow(10, state.normalize.targetDb / 20);
+    let peak = 0;
+    for (let ch = 0; ch < finalBuffer.numberOfChannels; ch++) {
+      const data = finalBuffer.getChannelData(ch);
+      for (let i = 0; i < data.length; i++) {
+        const abs = Math.abs(data[i]);
+        if (abs > peak) peak = abs;
+      }
+    }
+    if (peak > 0) {
+      const scale = targetLinear / peak;
+      for (let ch = 0; ch < finalBuffer.numberOfChannels; ch++) {
+        const data = finalBuffer.getChannelData(ch);
+        for (let i = 0; i < data.length; i++) {
+          data[i] *= scale;
+        }
+      }
+    }
+  }
+
   onProgress('Encoding WAV...', 90);
-  const blob = encodeWav(effectsBuffer);
+  const blob = encodeWav(finalBuffer);
   onProgress('Done', 100);
 
   downloadBlob(blob, `EcoSynth_Export_${Date.now()}.wav`);

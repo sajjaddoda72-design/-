@@ -1,5 +1,5 @@
 // EcoSynth Service Worker v2 — network-first for HTML, cache-first for hashed assets
-const CACHE_NAME = 'ecosynth-cache-v5';
+const CACHE_NAME = 'ecosynth-cache-v6';
 
 // Static assets to pre-cache on install (icons, manifest — NOT index.html)
 const PRECACHE = [

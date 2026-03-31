@@ -17,6 +17,7 @@ export const PlaybackControls = () => {
   const setIsPlaying = useStore(s => s.setIsPlaying);
   const currentTime = useStore(s => s.currentTime);
   const duration = useStore(s => s.duration);
+  const speed = useStore(s => s.speed);
   const file = useStore(s => s.file);
   const fileName = useStore(s => s.fileName);
   const reversed = useStore(s => s.reversed);
@@ -28,6 +29,9 @@ export const PlaybackControls = () => {
   const [exporting, setExporting] = useState(null); // { msg, p }
 
   const isEn = lang === 'en';
+
+  // Computed duration reflects speed change (e.g. 30s at 2x = 15s)
+  const computedDuration = speed > 0 ? duration / speed : duration;
 
   const togglePlay = () => setIsPlaying(!isPlaying);
 
@@ -104,12 +108,12 @@ export const PlaybackControls = () => {
             {file && (
               <span className="text-zinc-500 truncate max-w-[160px] mx-2">{fileName}</span>
             )}
-            <span className="text-emerald-400">{formatTime(duration)}</span>
+            <span className="text-emerald-400">{formatTime(computedDuration)}</span>
           </div>
 
           <input
             type="range" min="0" max="100" step="0.1"
-            value={duration ? (currentTime / duration) * 100 : 0}
+            value={computedDuration ? (currentTime / computedDuration) * 100 : 0}
             onChange={handleSeek} disabled={!file}
             className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-emerald-500 mb-4"
           />
