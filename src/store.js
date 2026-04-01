@@ -41,7 +41,8 @@ export const useStore = create((set) => ({
   },
   normalize: {
     enabled: false,
-    targetDb: -1, // target peak level in dB
+    targetDb: -1,
+    peakValue: 1, // analyzed once when file is loaded
   },
   limiter: {
     enabled: false,
