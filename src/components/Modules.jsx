@@ -228,61 +228,30 @@ export const Modules = () => {
         title={isEn ? "Mastering" : "الماسترينغ"}
         isActive={state.normalize.enabled || state.limiter.enabled}
         onToggle={() => {
-          if (state.normalize.enabled || state.limiter.enabled) {
-            state.setNormalize({ enabled: false });
-            state.setLimiter({ enabled: false });
-          }
+          const anyOn = state.normalize.enabled || state.limiter.enabled;
+          state.setNormalize({ enabled: !anyOn });
+          state.setLimiter({ enabled: !anyOn });
         }}
       >
-        {/* Normalize */}
-        <div className="mb-4">
-          <div className="flex items-center gap-3 mb-2">
-            <button
-              onClick={() => state.setNormalize({ enabled: !state.normalize.enabled })}
-              className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
-                state.normalize.enabled
-                  ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
-                  : 'bg-zinc-800/60 border-white/5 text-zinc-400'
-              }`}
-            >
-              {isEn ? 'Normalize' : 'تطبيع'}
-            </button>
-          </div>
-          <div className={!state.normalize.enabled ? 'opacity-50 pointer-events-none' : ''}>
-            <Slider
-              label={isEn ? "Target Level" : "المستوى المستهدف"}
-              value={state.normalize.targetDb} min={-6} max={0} step={0.5}
-              onChange={(v) => state.setNormalize({ targetDb: v })} format={v => `${v} dB`}
-            />
-          </div>
-        </div>
+        <div className={!(state.normalize.enabled || state.limiter.enabled) ? 'opacity-50 pointer-events-none' : ''}>
+          {/* Normalize */}
+          <Slider
+            label={isEn ? "Normalize Target" : "مستوى التطبيع"}
+            value={state.normalize.targetDb} min={-6} max={0} step={0.5}
+            onChange={(v) => state.setNormalize({ targetDb: v })} format={v => `${v} dB`}
+          />
 
-        {/* Limiter */}
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <button
-              onClick={() => state.setLimiter({ enabled: !state.limiter.enabled })}
-              className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
-                state.limiter.enabled
-                  ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
-                  : 'bg-zinc-800/60 border-white/5 text-zinc-400'
-              }`}
-            >
-              {isEn ? 'Limiter' : 'محدد'}
-            </button>
-          </div>
-          <div className={!state.limiter.enabled ? 'opacity-50 pointer-events-none' : ''}>
-            <Slider
-              label={isEn ? "Threshold" : "العتبة"}
-              value={state.limiter.threshold} min={-12} max={0} step={0.5}
-              onChange={(v) => state.setLimiter({ threshold: v })} format={v => `${v} dB`}
-            />
-            <Slider
-              label={isEn ? "Release" : "الإفلات"}
-              value={state.limiter.release} min={0.01} max={0.5} step={0.01}
-              onChange={(v) => state.setLimiter({ release: v })} format={v => `${Math.round(v * 1000)} ms`}
-            />
-          </div>
+          {/* Limiter */}
+          <Slider
+            label={isEn ? "Limiter Threshold" : "عتبة المحدد"}
+            value={state.limiter.threshold} min={-12} max={0} step={0.5}
+            onChange={(v) => state.setLimiter({ threshold: v })} format={v => `${v} dB`}
+          />
+          <Slider
+            label={isEn ? "Limiter Release" : "إفلات المحدد"}
+            value={state.limiter.release} min={0.01} max={0.5} step={0.01}
+            onChange={(v) => state.setLimiter({ release: v })} format={v => `${Math.round(v * 1000)} ms`}
+          />
         </div>
       </Panel>
 
