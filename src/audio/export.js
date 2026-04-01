@@ -19,6 +19,10 @@ function reverseBuffer(ctx, buffer) {
   return rev;
 }
 
+/**
+ * Apply all effects offline using the SAME chain order as real-time engine:
+ * Source → Gain → Pan → EQ → Compressor → Normalize → FX → Reverb → Limiter → Output
+ */
 const applyEffectsOffline = async (outBuffer, state, onProgress) => {
   const tailSamples = Math.ceil(outBuffer.sampleRate * 6);
   const totalLength = outBuffer.length + tailSamples;
@@ -26,12 +30,17 @@ const applyEffectsOffline = async (outBuffer, state, onProgress) => {
   const source = offlineCtx.createBufferSource();
   source.buffer = outBuffer;
 
+  // ---- Gain ----
   const gainNode = offlineCtx.createGain();
+  gainNode.gain.value = Math.pow(10, state.volume / 20);
+
+  // ---- Pan ----
   const panNode = offlineCtx.createStereoPanner
     ? offlineCtx.createStereoPanner()
     : offlineCtx.createGain();
+  if (panNode.pan) panNode.pan.value = state.pan / 100;
 
-  // 18-band EQ
+  // ---- 18-band EQ ----
   const eqFilters = EQ_BANDS.map((freq, i) => {
     const f = offlineCtx.createBiquadFilter();
     if (i === 0) f.type = 'lowshelf';
@@ -45,6 +54,7 @@ const applyEffectsOffline = async (outBuffer, state, onProgress) => {
     eqFilters[i - 1].connect(eqFilters[i]);
   }
 
+  // ---- Compressor ----
   const comp = offlineCtx.createDynamicsCompressor();
   if (state.compressor && state.compressor.enabled) {
     comp.threshold.value = state.compressor.threshold;
@@ -53,7 +63,44 @@ const applyEffectsOffline = async (outBuffer, state, onProgress) => {
     comp.release.value = state.compressor.release;
   }
 
-  // Limiter (hard-knee compressor as final stage)
+  // ---- Normalize (GainNode — same as real-time) ----
+  const normalizeGain = offlineCtx.createGain();
+  if (state.normalize && state.normalize.enabled && state.normalize.peakValue > 0) {
+    const targetLinear = Math.pow(10, state.normalize.targetDb / 20);
+    normalizeGain.gain.value = targetLinear / state.normalize.peakValue;
+  } else {
+    normalizeGain.gain.value = 1;
+  }
+
+  // ---- FX Preset dry/wet ----
+  const fxDryGain = offlineCtx.createGain();
+  const fxWetGain = offlineCtx.createGain();
+  fxDryGain.gain.value = 1;
+  fxWetGain.gain.value = 0;
+
+  if (state.activePreset) {
+    const preset = FX_PRESETS.find((p) => p.id === state.activePreset);
+    if (preset) {
+      const nodes = preset.build(offlineCtx);
+      if (nodes.length > 0) {
+        normalizeGain.connect(nodes[0]);
+        for (let i = 1; i < nodes.length; i++) {
+          nodes[i - 1].connect(nodes[i]);
+        }
+        nodes[nodes.length - 1].connect(fxWetGain);
+      }
+      fxDryGain.gain.value = 1 - preset.wet;
+      fxWetGain.gain.value = preset.wet;
+    }
+  }
+
+  // ---- Reverb ----
+  const reverbDry = offlineCtx.createGain();
+  const reverbWet = offlineCtx.createGain();
+  const preDelay = offlineCtx.createDelay(1);
+  const convolver = offlineCtx.createConvolver();
+
+  // ---- Limiter — FINAL stage ----
   const limiter = offlineCtx.createDynamicsCompressor();
   if (state.limiter && state.limiter.enabled) {
     limiter.threshold.value = state.limiter.threshold;
@@ -66,60 +113,39 @@ const applyEffectsOffline = async (outBuffer, state, onProgress) => {
     limiter.ratio.value = 1;
   }
 
-  const fxDryGain = offlineCtx.createGain();
-  const fxWetGain = offlineCtx.createGain();
-  fxDryGain.gain.value = 1;
-  fxWetGain.gain.value = 0;
-
-  if (state.activePreset) {
-    const preset = FX_PRESETS.find((p) => p.id === state.activePreset);
-    if (preset) {
-      const nodes = preset.build(offlineCtx);
-      if (nodes.length > 0) {
-        limiter.connect(nodes[0]);
-        for (let i = 1; i < nodes.length; i++) {
-          nodes[i - 1].connect(nodes[i]);
-        }
-        nodes[nodes.length - 1].connect(fxWetGain);
-      }
-      fxDryGain.gain.value = 1 - preset.wet;
-      fxWetGain.gain.value = preset.wet;
-    }
-  }
-
-  const reverbDry = offlineCtx.createGain();
-  const reverbWet = offlineCtx.createGain();
-  const preDelay = offlineCtx.createDelay(1);
-  const convolver = offlineCtx.createConvolver();
-
+  /*
+   * WIRE — same order as engine._connectChain():
+   * Source → Gain → Pan → EQ → Compressor → Normalize
+   *   → FX dry → Reverb dry ─┐
+   *   → FX wet → Reverb dry ─┤→ Limiter → Output
+   *   → Reverb wet path ─────┘
+   */
   source.connect(gainNode);
   gainNode.connect(panNode);
   panNode.connect(eqFilters[0]);
   eqFilters[eqFilters.length - 1].connect(comp);
+  comp.connect(normalizeGain);
 
-  // Compressor -> Limiter
-  comp.connect(limiter);
-
-  limiter.connect(fxDryGain);
+  // Normalize → FX dry → Reverb dry
+  normalizeGain.connect(fxDryGain);
   fxDryGain.connect(reverbDry);
+
+  // FX wet → Reverb dry
   fxWetGain.connect(reverbDry);
 
+  // Normalize → Reverb wet path
   const preDelayGain = offlineCtx.createGain();
-  limiter.connect(preDelayGain);
+  normalizeGain.connect(preDelayGain);
   preDelayGain.connect(preDelay);
   preDelay.connect(convolver);
   convolver.connect(reverbWet);
 
-  reverbDry.connect(offlineCtx.destination);
-  reverbWet.connect(offlineCtx.destination);
+  // Reverb dry + wet → Limiter (FINAL) → Output
+  reverbDry.connect(limiter);
+  reverbWet.connect(limiter);
+  limiter.connect(offlineCtx.destination);
 
-  const linearGain = Math.pow(10, state.volume / 20);
-  gainNode.gain.value = linearGain;
-
-  if (panNode.pan) {
-    panNode.pan.value = state.pan / 100;
-  }
-
+  // ---- Reverb params ----
   if (state.reverb.enabled) {
     reverbDry.gain.value = 1 - state.reverb.wet;
     reverbWet.gain.value = state.reverb.wet;
@@ -212,31 +238,7 @@ export const exportAudio = async (onProgress) => {
   const stretchedBuffer = await stretchOffline(ctx, sourceBuffer, state.speed, state.pitch, (p) => onProgress('Stretching...', p));
 
   onProgress('Applying Effects...', 0);
-  const effectsBuffer = await applyEffectsOffline(stretchedBuffer, state, (p) => onProgress('Applying Effects...', p));
-
-  // Normalize: scan peaks and scale to target level
-  let finalBuffer = effectsBuffer;
-  if (state.normalize && state.normalize.enabled) {
-    onProgress('Normalizing...', 85);
-    const targetLinear = Math.pow(10, state.normalize.targetDb / 20);
-    let peak = 0;
-    for (let ch = 0; ch < finalBuffer.numberOfChannels; ch++) {
-      const data = finalBuffer.getChannelData(ch);
-      for (let i = 0; i < data.length; i++) {
-        const abs = Math.abs(data[i]);
-        if (abs > peak) peak = abs;
-      }
-    }
-    if (peak > 0) {
-      const scale = targetLinear / peak;
-      for (let ch = 0; ch < finalBuffer.numberOfChannels; ch++) {
-        const data = finalBuffer.getChannelData(ch);
-        for (let i = 0; i < data.length; i++) {
-          data[i] *= scale;
-        }
-      }
-    }
-  }
+  const finalBuffer = await applyEffectsOffline(stretchedBuffer, state, (p) => onProgress('Applying Effects...', p));
 
   onProgress('Encoding WAV...', 90);
   const blob = encodeWav(finalBuffer);
